@@ -1,0 +1,27 @@
+import FWCore.ParameterSet.Config as cms
+
+onia2MuMuPAT = cms.EDProducer('HiOnia2MuMuPAT',
+        muons                    = cms.InputTag("patMuonsWithTrigger"),
+        beamSpotTag              = cms.InputTag("offlineBeamSpot"),
+        primaryVertexTag         = cms.InputTag("offlinePrimaryVertices"),
+        srcTracks                = cms.InputTag("generalTracks"),
+        genParticles             = cms.InputTag("genParticles"),
+        higherPuritySelection    = cms.string(""),
+        lowerPuritySelection     = cms.string(""),
+        dimuonSelection          = cms.string(""),
+        DimuTrkSelection         = cms.string(""),
+        trimuonSelection         = cms.string(""),
+        LateDimuonSel            = cms.string(""),
+        LateDimuTrkSel           = cms.string(""),
+        LateTrimuonSel           = cms.string(""),
+        addCommonVertex          = cms.bool(True),
+        addMuonlessPrimaryVertex = cms.bool(False),
+        resolvePileUpAmbiguity   = cms.bool(True), 
+        onlySoftMuons            = cms.bool(False),
+        onlySingleMuons          = cms.bool(False),
+        doTrimuons               = cms.bool(False),
+        DimuonTrk                = cms.bool(False),
+        flipJpsiDirection        = cms.int32(False),
+        particleType             = cms.int32(211), 
+        trackMass                = cms.double(0.13957018) 
+)
