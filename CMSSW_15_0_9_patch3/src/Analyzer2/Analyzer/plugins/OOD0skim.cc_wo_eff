@@ -1,0 +1,998 @@
+// -*- C++ -*-
+//
+// Package:    demo/OOJPsiSkim
+// Class:      OOJPsiSkim
+//
+/**\class OOJPsiSkim OOJPsiSkim.cc demo/OOJPsiSkim/plugins/OOJPsiSkim.cc
+
+ Description: [one line class summary]
+
+ Implementation:
+     [Notes on implementation]
+*/
+//
+// Original Author:  Zhenyu Chen
+// Updated Author:  Jiateng Peng
+//         Created:  23 Dec 2025
+// Updated Author:  Man Singh                                                                                                  
+//         Created:  10 April 2026
+// Changes by Man for JPsi correlation
+//         changes:  10 April 2026
+// New contents: the efficiency of trigger particles are constrained to 1
+// Prompt fraction not applied 
+
+#include <memory>
+#include <string>
+#include <vector>
+#include <iostream>
+#include <math.h>
+
+#include <TMath.h>
+#include <TH1D.h>
+#include <TH2D.h>
+#include <TNtuple.h>
+#include <TFile.h>
+#include <TROOT.h>
+#include <TSystem.h>
+#include <TString.h>
+#include <TCanvas.h>
+#include <TVector3.h>
+#include <TRandom.h>
+#include <TLorentzVector.h>
+
+#include "FWCore/Framework/interface/Frameworkfwd.h"
+#include "FWCore/Framework/interface/one/EDAnalyzer.h"
+#include "FWCore/Framework/interface/Event.h"
+#include "FWCore/Framework/interface/MakerMacros.h"
+
+#include "FWCore/ParameterSet/interface/ParameterSet.h"
+#include "FWCore/Utilities/interface/InputTag.h"
+
+#include "DataFormats/TrackReco/interface/Track.h"
+#include "DataFormats/TrackReco/interface/TrackExtra.h"
+#include "DataFormats/TrackReco/interface/TrackFwd.h"
+
+#include "FWCore/MessageLogger/interface/MessageLogger.h"
+#include "DataFormats/PatCandidates/interface/CompositeCandidate.h"
+#include "DataFormats/PatCandidates/interface/Muon.h"
+
+#include "DataFormats/PatCandidates/interface/PackedCandidate.h"
+#include "DataFormats/PatCandidates/interface/PackedGenParticle.h"
+
+#include "DataFormats/Candidate/interface/Candidate.h"
+#include "DataFormats/Candidate/interface/CandidateFwd.h"
+
+#include "DataFormats/Candidate/interface/VertexCompositeCandidate.h"
+#include "DataFormats/Candidate/interface/VertexCompositeCandidateFwd.h"
+
+#include "DataFormats/VertexReco/interface/Vertex.h"
+#include "DataFormats/VertexReco/interface/VertexFwd.h"
+
+#include "DataFormats/RecoCandidate/interface/RecoChargedCandidate.h"
+
+
+#include "FWCore/ServiceRegistry/interface/Service.h"
+#include "CommonTools/UtilAlgos/interface/TFileService.h"
+
+#include <Math/Functions.h>
+#include <Math/SVector.h>
+#include <Math/SMatrix.h>
+
+
+#define PI 3.1416
+// ---- Muon acceptance threshold function (pt threshold vs eta) ----
+static double trkAcc(const double eta) {
+  static const int nPts = 10;
+  static const double mEta[nPts] = {-2.4, -1.7, -1.3, -1.3, -1.0, 1.0, 1.3, 1.3, 1.7, 2.4};
+  static const double mPt [nPts] = { 1.0,  1.0,  1.53, 2.1,  3.3, 3.3, 2.1, 1.53, 1.0, 1.0};
+
+  int iseg = -1;
+  for (int i = 0; i < nPts - 1; ++i) {
+    if (eta >= mEta[i] && eta < mEta[i + 1]) { iseg = i; break; }
+  }
+  if (eta == mEta[nPts - 1]) iseg = nPts - 2;
+  if (iseg < 0) return 999999.0;
+
+  const double slope = (mPt[iseg + 1] - mPt[iseg]) / (mEta[iseg + 1] - mEta[iseg]);
+  const double ptTh  = slope * (eta - mEta[iseg]) + mPt[iseg];
+  return ptTh;
+}
+
+using namespace std;
+
+using reco::TrackCollection;
+//using reco::VertexCompositeCandidateCollection;
+
+class OOJPsiSkim : public edm::one::EDAnalyzer<edm::one::SharedResources> {
+public:
+  explicit OOJPsiSkim(const edm::ParameterSet&);
+  ~OOJPsiSkim() override;
+
+  static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
+
+private:
+  void beginJob() override;
+  void analyze(const edm::Event&, const edm::EventSetup&) override;
+  void fillRECO(const edm::Event&, const edm::EventSetup&);
+  void endJob() override;
+
+  // ----------member data ---------------------------
+    edm::ParameterSet theConfig;
+    edm::EDGetTokenT<edm::View<pat::PackedCandidate>> token_tracks;
+    edm::EDGetTokenT<reco::VertexCollection> token_vertices;
+  edm::EDGetTokenT<pat::CompositeCandidateCollection> recoJPsiCompositeCandidate_Token_;
+  edm::EDGetTokenT<pat::MuonCollection> muonCollectionToken_;
+
+  static const int MinCent = 40;  // 20%
+  static const int MaxCent = 119; // 60%
+  //static const int MinCent = 0;
+  //static const int MaxCent = 19;
+    static const int nCentTableBins = 200;
+    //Official O table
+    float binBoundaries[nCentTableBins+1]={0,0.717572,1.43514,2.15272,2.87029,3.58786,4.30543,5.023,5.74057,6.45815,7.17572,7.89329,8.61086,9.32843,10.046,10.5615,10.9358,11.3222,11.7114,12.1054,12.5071,12.9114,13.3242,13.7529,14.1895,14.6323,15.0788,15.5384,16.0017,16.4718,16.954,17.4529,17.965,18.4818,19.0081,19.5384,20.0798,20.6295,21.1904,21.7624,22.3333,22.9144,23.5082,24.108,24.7103,25.3327,25.9643,26.6021,27.2404,27.8889,28.551,29.2201,29.8838,30.5609,31.2582,31.959,32.6755,33.3996,34.127,34.8736,35.624,36.3835,37.1513,37.9462,38.7306,39.5312,40.3522,41.1784,41.9996,42.8382,43.7007,44.5735,45.4614,46.3438,47.2291,48.1364,49.0614,49.9993,50.9485,51.9135,52.8921,53.8808,54.8964,55.893,56.9136,57.9568,59.0177,60.0888,61.1833,62.2824,63.399,64.5337,65.6807,66.8337,68.0214,69.219,70.4243,71.651,72.9014,74.165,75.4546,76.7537,78.0703,79.4045,80.7569,82.1322,83.5298,84.9421,86.3744,87.8423,89.3304,90.8548,92.361,93.9159,95.4992,97.0799,98.6655,100.303,101.96,103.647,105.32,107.036,108.77,110.55,112.332,114.116,115.936,117.785,119.708,121.683,123.605,125.589,127.588,129.583,131.654,133.746,135.887,138.016,140.191,142.401,144.623,146.867,149.14,151.514,153.909,156.277,158.74,161.209,163.662,166.177,168.728,171.298,173.901,176.575,179.302,182.038,184.793,187.576,190.47,193.355,196.279,199.296,202.355,205.406,208.567,211.746,215.007,218.296,221.624,224.981,228.464,231.972,235.5,239.147,242.785,246.538,250.308,254.2,258.246,262.353,266.531,270.819,275.228,279.794,284.51,289.356,294.368,299.561,305.114,310.888,316.984,323.451,330.516,337.981,346.265,355.527,366.193,379.001,395.659,421.298,10000.0};
+
+    static const int nMassBins = 8;
+    float massCuts[nMassBins+1]={2.6, 2.75, 2.85, 2.95, 3.05, 3.15, 3.25, 3.35, 3.5};
+
+    static const int nPtBins = 13;
+  float ptCuts[nPtBins+1]={0.2,0.5,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,12.0,14.0 };
+  //float ptCuts[nPtBins+1]={0.0,2.0,4.0,6.0,7.0,8.0,10.0 };
+    TH1D* hNtrk;
+
+    TH1D* hpt;
+    TH1D* heta;
+    TH1D* hphi;
+    TH1D* hrapidity;
+    TH1D* hmass;
+    
+    TH2D* hptrap;
+    TH2D* hpteta;
+    TH2D* hptetaMu;
+    // For ch-ch corr
+    // ch-ch reference histograms
+    TH1D* hMult_ch;          // optional QA: charged multiplicity used for reference
+    TH2D* hSignal_chch;      // same-event charged-charged
+    TH2D* hBackground_chch;  // mixed-event charged-charged
+    
+    TH3F* effhisto;
+    TH3F* fakehisto;
+    TH3F* sechisto;
+    TH3F* mulhisto;
+
+    struct MassBinHistograms {
+        TH1D* hMult_bins;
+        TH2D* hSignal;
+        TH2D* hBackground;
+    };
+
+    struct Histograms {
+        TH1D* hmass;
+      //TH1D* hpt_ptBin;      // ADD THIS
+        TH1D* heta_ptBin;     // ADD THIS
+        TH1D* hphi_ptBin;     // ADD THIS
+        std::vector<MassBinHistograms> PtMassBins_SB;
+    };
+
+    std::vector<Histograms> PtBins_all;
+
+    struct Particle_ass {
+        float eta;
+        float phi;
+        float pt; 
+    };
+
+    struct Particle_trg {
+        float eta;
+        float phi;
+        float pt;
+        float eta_mu1;      // Changed from eta_dau1
+        float phi_mu1;      // Changed from phi_dau1
+        float eta_mu2;      // Changed from eta_dau2
+        float phi_mu2;      // Changed from phi_dau2
+        float charge_mu1;   // ADD
+        float charge_mu2;   // ADD
+        bool isTrigger;     // ADD
+    };
+
+    vector< vector< vector< vector<Particle_trg> > > > *pVectVectVect_trg;
+    vector<Particle_ass> *pVect_ass;
+    vector< vector<Particle_ass> >  *pVectVect_ass;
+    
+    vector<float> *zvtxVect;
+    vector<int> *nNtrkoffline;
+    vector<int> *ncent;
+    
+    int nMult_Ntrkoffline;
+    float bestvx;
+    float bestvy;
+    float bestvz;
+    
+    
+    float y;
+    float mass;
+    float dzos1;
+    float dzos2;
+    float dxyos1;
+    float dxyos2;
+  //float VtxProb;
+    int nhit1;
+    int nhit2;
+    float dlos;
+    float dl;
+    float dlerror;
+    float agl;
+    bool trkquality1;
+    bool trkquality2;
+    float pt1;
+    float pt2;
+    float ptErr1;
+    float ptErr2;
+    float p1;
+    float p2;
+    float eta1;
+    float eta2;
+    float phi1;
+    float phi2;
+    float charge1;
+    float charge2;
+  //float vtxChi2;
+  //float ndf;
+    float agl_abs;
+    float agl2D;
+    float agl2D_abs;
+    float dlos2D;
+    float trackdca;
+    float d0dca;
+    float trkChi1;
+    float trkChi2;
+    bool isSwap;
+    bool isPrompt;
+    int idmom_reco;
+    bool matchGEN;    
+
+
+    float tolerance = 0.0002;
+
+};
+
+OOJPsiSkim::OOJPsiSkim(const edm::ParameterSet& theParameters) :
+    theConfig(theParameters)
+   {
+        using std::string;
+        token_tracks = consumes<edm::View<pat::PackedCandidate>>(theParameters.getParameter<edm::InputTag>("TrackLabel"));
+        token_vertices = consumes<reco::VertexCollection>(theParameters.getParameter<edm::InputTag>("VertexLabel"));
+
+        recoJPsiCompositeCandidate_Token_ = consumes<pat::CompositeCandidateCollection>(theConfig.getUntrackedParameter<edm::InputTag>("JPsiCollection"));
+        
+        // ADD: Token for muons to access soft muon ID
+        muonCollectionToken_ = consumes<pat::MuonCollection>(theConfig.getUntrackedParameter<edm::InputTag>("MuonCollection", edm::InputTag("unpackedMuons")));
+    }
+
+OOJPsiSkim::~OOJPsiSkim() {
+
+    delete pVectVectVect_trg;
+    delete pVectVect_ass;
+    delete zvtxVect;
+    delete nNtrkoffline;
+    delete ncent;
+
+}
+void OOJPsiSkim::analyze(const edm::Event &iEvent, const edm::EventSetup &iSetup)
+{
+    using std::vector;
+    using std::cout;
+    using std::endl;
+    using namespace reco;
+    using namespace edm;
+
+    // Get the vertex
+    Handle<reco::VertexCollection> theVertexHandle;
+    iEvent.getByToken(token_vertices, theVertexHandle);
+    if(theVertexHandle->size() == 0) return;
+    
+
+    // select on requirement of valid vertex
+    bestvz=-999.9; 
+    bestvx=-999.9; 
+    bestvy=-999.9;
+    double bestvzError=-999.9, bestvxError=-999.9, bestvyError=-999.9;
+
+    const reco::VertexCollection vtxCollection = *(theVertexHandle.product());
+    reco::VertexCollection::const_iterator vtxPrimary = vtxCollection.begin();
+
+    if(vtxPrimary->isFake()) return;
+
+    bestvx = vtxPrimary->x();
+    bestvy = vtxPrimary->y();
+    bestvz = vtxPrimary->z();
+    bestvzError = vtxPrimary->zError(); 
+    bestvxError = vtxPrimary->xError(); 
+    bestvyError = vtxPrimary->yError();
+
+    if (bestvz > 15.0 || bestvz < -15.0) return;
+
+    math::XYZPoint bestvtx(bestvx, bestvy, bestvz);
+
+    // Get the tracks
+    auto theTrackHandle = iEvent.getHandle(token_tracks);
+    if (!theTrackHandle->size()) return;
+
+    // do the track collection
+    auto input_cands = *theTrackHandle;
+    edm::View<pat::PackedCandidate>::const_iterator indx;
+
+    
+    nMult_Ntrkoffline = 0;
+    float toppt=-999;
+
+    for (indx = input_cands.begin(); indx != input_cands.end(); indx++)
+    {
+        // select tracks
+        if (!indx->hasTrackDetails())continue;
+        if (abs(indx->charge()) != 1)continue;
+        if (!(indx->pseudoTrack().quality(reco::TrackBase::qualityByName("highPurity"))))continue;
+
+        const Track &tmpTrack = indx->pseudoTrack();
+
+        // DCA cut
+        float dzvtx = tmpTrack.dz(bestvtx);
+        float dxyvtx = tmpTrack.dxy(bestvtx);
+        float dzerror = sqrt(tmpTrack.dzError() * tmpTrack.dzError() + bestvzError * bestvzError);
+        float dxyerror = sqrt(tmpTrack.d0Error() * tmpTrack.d0Error() + bestvxError * bestvyError);
+
+        if (fabs(tmpTrack.ptError()) / tmpTrack.pt() > 0.10)continue;
+        if (fabs(dzvtx / dzerror) > 3)continue;
+        if (fabs(dxyvtx / dxyerror) > 3)continue;
+        if (fabs(dzvtx) > 9999.0) continue;
+
+        if (tmpTrack.eta() > -2.4 && tmpTrack.eta() < 2.4 && tmpTrack.pt() > 0.4)
+            nMult_Ntrkoffline++;
+        if (tmpTrack.eta() < 2.4 && tmpTrack.eta() > -2.4 &&  tmpTrack.pt() > toppt)
+            toppt = tmpTrack.pt();
+
+    }
+    
+    if(nMult_Ntrkoffline < 0 || nMult_Ntrkoffline > 2000) return;
+    if(toppt < 0 || toppt > 9999.0) return;
+    hNtrk->Fill(nMult_Ntrkoffline);
+
+    float etHFtowerSumPlus = 0;
+    float etHFtowerSumMinus = 0;
+    float etHFtowerSum = 0;
+
+    //use sum of et to sperate centrality bins
+    for(indx=input_cands.begin(); indx != input_cands.end(); indx++) {
+
+            if(indx->pdgId() == 1 || indx->pdgId() == 2)  {
+                //HF+
+                if(indx->eta() > 3.0 && indx->eta() < 5.2) etHFtowerSumPlus += indx->et();
+                //HF-
+                if(indx->eta() > -5.2 && indx->eta() < -3.0) etHFtowerSumMinus += indx->et();
+            }
+    } 
+
+    etHFtowerSum = etHFtowerSumPlus + etHFtowerSumMinus;
+
+    int cent = -1;
+    for (int ic=0; ic < nCentTableBins; ic++){
+        if(etHFtowerSum>binBoundaries[ic] && etHFtowerSum<binBoundaries[ic+1]){
+        cent = nCentTableBins -1 - ic;
+        }
+    }
+
+    if(cent<MinCent || cent>MaxCent) return;
+
+    //get associated particles
+    pVect_ass = new vector<Particle_ass>;
+
+    for (indx = input_cands.begin(); indx != input_cands.end(); indx++){
+            if (!indx->hasTrackDetails())continue;
+            if (abs(indx->charge()) != 1)continue;
+            if (!(indx->pseudoTrack().quality(reco::TrackBase::qualityByName("highPurity"))))continue;
+
+            const Track &tmpTrack = indx->pseudoTrack();
+
+            float dzvtx = tmpTrack.dz(bestvtx);
+            float dxyvtx = tmpTrack.dxy(bestvtx);
+            float dzerror = sqrt(tmpTrack.dzError() * tmpTrack.dzError() + bestvzError * bestvzError);
+            float dxyerror = sqrt(tmpTrack.d0Error() * tmpTrack.d0Error() + bestvxError * bestvyError);
+
+            if (fabs(tmpTrack.ptError()) / tmpTrack.pt() > 0.10)continue;
+            if (fabs(dzvtx / dzerror) > 3)continue;
+            if (fabs(dxyvtx / dxyerror) > 3)continue;
+            if (fabs(dzvtx) > 9999.0) continue;
+
+            float eta = tmpTrack.eta();
+            float phi = tmpTrack.phi();
+            float pt  = tmpTrack.pt();
+
+            Particle_ass part;
+            part.pt = pt;
+            part.eta = eta;
+            part.phi = phi;
+
+            if(eta<=2.4 && eta>=-2.4 && pt<=3.0 && pt>=0.3) pVect_ass->push_back(part);
+    }
+
+    std::vector<std::vector<std::vector<Particle_trg>>> particlesPerBin(nPtBins, std::vector<std::vector<Particle_trg>>(nMassBins));
+
+    edm::Handle<pat::CompositeCandidateCollection> JPsiCandidates;
+    iEvent.getByToken(recoJPsiCompositeCandidate_Token_, JPsiCandidates);
+    if(!JPsiCandidates.isValid()) return;
+    const pat::CompositeCandidateCollection * JPsiCandidates_ = JPsiCandidates.product();
+
+    // Get muon collection for soft muon ID
+    edm::Handle<pat::MuonCollection> muons;
+    iEvent.getByToken(muonCollectionToken_, muons);
+
+    for(unsigned it=0; it<JPsiCandidates_->size(); ++it){
+        
+        const pat::CompositeCandidate & jpsi = (*JPsiCandidates_)[it];
+
+        float eta = jpsi.eta();
+        float pt = jpsi.pt();
+        float phi = jpsi.phi();
+        y = jpsi.rapidity();
+        
+        if(std::abs(y) < 1.6 || std::abs(y) > 2.4) continue;  // Enforce 1.6 < |y| < 2.4
+        
+        double px = jpsi.px();
+        double py = jpsi.py();
+        double pz = jpsi.pz();
+        mass = jpsi.mass();
+        
+        if(jpsi.numberOfDaughters() != 2) continue;
+        
+        const reco::Candidate * d1 = jpsi.daughter(0);
+        const reco::Candidate * d2 = jpsi.daughter(1);
+        
+        const pat::Muon* mu0 = dynamic_cast<const pat::Muon*>(d1);
+        const pat::Muon* mu1 = dynamic_cast<const pat::Muon*>(d2);
+        
+        if(!mu0 || !mu1) continue;
+        
+        // Check opposite charges
+        if(mu0->charge() * mu1->charge() >= 0) continue;
+        
+        // Soft muon ID cuts (your provided selections)
+        if(!mu0->isPFMuon() || !mu1->isPFMuon()) continue;
+        if(!mu0->isSoftMuon(*vtxPrimary) || !mu1->isSoftMuon(*vtxPrimary)) continue;
+        
+        // Vertex probability cut
+        double vtxProb = jpsi.userFloat("vProb");
+        if(vtxProb < 0.01) continue;
+        
+        // Muon acceptance cuts
+        if(mu0->p() <= 3.0 || mu1->p() <= 3.0) continue;  // Total momentum > 3 GeV
+        if(std::abs(mu0->eta()) >= 2.4 || std::abs(mu1->eta()) >= 2.4) continue;  // Eta acceptance
+        
+        auto trk0 = mu0->bestTrack();
+        auto trk1 = mu1->bestTrack();
+        if(!trk0 || !trk1) continue;
+
+        // Extract muon track properties
+        pt1 = mu0->pt();
+        pt2 = mu1->pt();
+        
+        p1 = mu0->p();
+        p2 = mu1->p();
+        
+        eta1 = mu0->eta();
+        eta2 = mu1->eta();
+	// ========== Muon acceptance cut using trkAcc(eta) ==========
+	//const double ptTh1 = trkAcc(eta1);
+	//const double ptTh2 = trkAcc(eta2); p>3 comment
+	
+	// require both muons pass acceptance
+	//if (pt1 < ptTh1) continue;
+	//if (pt2 < ptTh2) continue;
+	
+        phi1 = mu0->phi();
+        phi2 = mu1->phi();
+        
+        charge1 = mu0->charge();
+        charge2 = mu1->charge();
+
+        // Track quality variables
+        trkChi1 = trk0->normalizedChi2();
+        trkChi2 = trk1->normalizedChi2();
+        
+        ptErr1 = trk0->ptError();
+        ptErr2 = trk1->ptError();
+        
+        nhit1 = trk0->numberOfValidHits();
+        nhit2 = trk1->numberOfValidHits();
+
+        // DCA calculations for muon tracks
+        double dzbest1 = trk0->dz(bestvtx);
+        double dxybest1 = trk0->dxy(bestvtx);
+        double dzerror1 = sqrt(trk0->dzError()*trk0->dzError()+bestvzError*bestvzError);
+        double dxyerror1 = sqrt(trk0->d0Error()*trk0->d0Error()+bestvxError*bestvyError);
+
+        dzos1 = dzbest1/dzerror1;
+        dxyos1 = dxybest1/dxyerror1;
+        
+        double dzbest2 = trk1->dz(bestvtx);
+        double dxybest2 = trk1->dxy(bestvtx);
+        double dzerror2 = sqrt(trk1->dzError()*trk1->dzError()+bestvzError*bestvzError);
+        double dxyerror2 = sqrt(trk1->d0Error()*trk1->d0Error()+bestvxError*bestvyError);
+        
+        dzos2 = dzbest2/dzerror2;
+        dxyos2 = dxybest2/dxyerror2;
+
+        // Vertex quality for J/psi
+        //vtxChi2 = jpsi.vertexChi2();
+        //ndf = jpsi.vertexNdof();
+        //VtxProb = TMath::Prob(vtxChi2, ndf);
+
+        // ========== J/PSI SPECIFIC QUALITY CUTS ==========
+                if(mass < 2.6 || mass > 3.5) continue;
+                if(pt < 0.0 || pt > 14.0) continue;
+        
+        // Muon track quality cuts (softer than hadron requirements)
+        //if(nhit1 < 5 || nhit2 < 5) continue;  // Muon tracks have fewer hits than hadrons
+        //if(std::abs(dzos1) > 3 || std::abs(dzos2) > 3) continue;  // DCA/z cut
+        //if(std::abs(dxyos1) > 3 || std::abs(dxyos2) > 3) continue;  // DCA/xy cut
+        
+        // pT error cuts for muons (softer than hadrons)
+        //if(ptErr1/pt1 >= 0.2 || ptErr2/pt2 >= 0.2) continue;
+        
+
+
+		
+        // ========== FILL HISTOGRAMS ==========
+        
+        // Reconstructed J/psi properties
+        hpt->Fill(pt);
+        heta->Fill(eta);
+        hphi->Fill(phi);
+        hrapidity->Fill(y);
+        hmass->Fill(mass);
+        
+        hptrap->Fill(y, pt);
+        hpteta->Fill(eta, pt);
+        hptetaMu->Fill(eta1, pt1);
+        hptetaMu->Fill(eta2, pt2);
+        
+        // Fill mass spectrum for each pT bin
+        for (int iPtBin = 0; iPtBin < nPtBins; iPtBin++)
+        {
+            if (pt >= ptCuts[iPtBin] && pt < ptCuts[iPtBin+1]) {
+                PtBins_all[iPtBin].hmass->Fill(mass);
+                //PtBins_all[iPtBin].hpt_ptBin->Fill(pt);      // ADD THIS
+                PtBins_all[iPtBin].heta_ptBin->Fill(eta);    // ADD THIS
+                PtBins_all[iPtBin].hphi_ptBin->Fill(phi);    // ADD THIS
+                break;
+            }
+        }
+
+        // ========== PREPARE TRIGGER PARTICLE FOR 2-PARTICLE CORRELATION ==========
+        
+        Particle_trg part;
+        part.pt = pt;
+        part.eta = eta;
+        part.phi = phi;
+        part.eta_mu1 = mu0->eta();      // Changed from eta_dau1
+        part.phi_mu1 = mu0->phi();      // Changed from phi_dau1
+        part.eta_mu2 = mu1->eta();      // Changed from eta_dau2
+        part.phi_mu2 = mu1->phi();      // Changed from phi_dau2
+        part.charge_mu1 = mu0->charge();
+        part.charge_mu2 = mu1->charge();
+        part.isTrigger = true;
+
+        // Bin J/psi by (pT, mass) for flow measurement
+        for (int iPtBin = 0; iPtBin < nPtBins; iPtBin++)
+        {
+            if (pt >= ptCuts[iPtBin] && pt < ptCuts[iPtBin+1]) {
+                // For J/psi flow analysis, use mass bins as signal/sideband regions
+                for (int iMassBin = 0; iMassBin < nMassBins; iMassBin++){
+                    if (mass >= massCuts[iMassBin] && mass < massCuts[iMassBin+1]){
+                        particlesPerBin[iPtBin][iMassBin].push_back(part);
+                        break;
+                    }
+                }
+                break;
+            }
+        }
+        
+    } // End J/psi candidate loop
+
+
+    for (int iPtBin = 0; iPtBin < nPtBins; iPtBin++) {
+        for (int iMassBin = 0; iMassBin < nMassBins; iMassBin++) {
+            const auto& binParticles = particlesPerBin[iPtBin][iMassBin];
+            int nTotal = binParticles.size();  
+
+            Histograms& ptBin = PtBins_all[iPtBin];
+            MassBinHistograms& h = ptBin.PtMassBins_SB[iMassBin];
+            
+            if (nTotal > 0) {     
+                
+                h.hMult_bins->Fill(nTotal);
+            
+                for (const auto& part_trg : binParticles) {
+
+                    float eta_trg = part_trg.eta;
+                    float phi_trg = part_trg.phi;
+                    
+                    for (const auto& part_ass : *pVect_ass) {  
+                        float pt_ass = part_ass.pt;
+                        float eta_ass = part_ass.eta;
+                        float phi_ass = part_ass.phi;
+
+                        float eff_ass = effhisto->GetBinContent(effhisto->FindBin(eta_ass,pt_ass,cent));
+                        float fake_ass = fakehisto->GetBinContent(fakehisto->FindBin(eta_ass,pt_ass,cent));
+                        float sec_ass = sechisto->GetBinContent(sechisto->FindBin(eta_ass,pt_ass,cent));
+                        float mul_ass = mulhisto->GetBinContent(mulhisto->FindBin(eta_ass,pt_ass,cent));
+
+                        float effweight_ass = eff_ass * (1 + mul_ass) / (1 - fake_ass) / (1 - sec_ass);
+
+			const double eff_jpsi = jpsiEff_pt_yHigh(pt);
+			if (eff_jpsi <= 0) continue;  // or set weight=1 if you prefer
+			const double w_jpsi = 1.0 / eff_jpsi;
+                        
+                        float deltaEta=eta_ass-eta_trg;
+                        float deltaPhi=phi_ass-phi_trg;
+
+                        float deltaEta_mu1 = part_trg.eta_mu1 - eta_ass;  // Changed from eta_dau1
+                        float deltaPhi_mu1 = part_trg.phi_mu1 - phi_ass;  // Changed from phi_dau1
+                        float deltaEta_mu2 = part_trg.eta_mu2 - eta_ass;  // Changed from eta_dau2
+                        float deltaPhi_mu2 = part_trg.phi_mu2 - phi_ass;  // Changed from phi_dau2
+
+                        if(deltaPhi>PI) deltaPhi=deltaPhi-2*PI;
+                        if(deltaPhi<-PI) deltaPhi=deltaPhi+2*PI;
+                        if(deltaPhi>-PI && deltaPhi<-PI/2.) deltaPhi=deltaPhi+2*PI;
+
+                        if(deltaPhi_mu1 > PI) deltaPhi_mu1 -= 2*PI;
+                        if(deltaPhi_mu1 < -PI) deltaPhi_mu1 += 2*PI;
+                        if(deltaPhi_mu1 > -PI && deltaPhi_mu1 < -PI/2.) deltaPhi_mu1 += 2*PI;
+
+                        if(deltaPhi_mu2 > PI) deltaPhi_mu2 -= 2*PI;
+                        if(deltaPhi_mu2 < -PI) deltaPhi_mu2 += 2*PI;
+                        if(deltaPhi_mu2 > -PI && deltaPhi_mu2 < -PI/2.) deltaPhi_mu2 += 2*PI;
+                        
+                        //if(deltaEta==0 && deltaPhi==0) continue;
+                        if(fabs(deltaEta)==0 && fabs(deltaPhi)==0) continue;
+                        if((fabs(deltaEta_mu1)<tolerance && fabs(deltaPhi_mu1)<tolerance) ||
+                           (fabs(deltaEta_mu2)<tolerance && fabs(deltaPhi_mu2)<tolerance)) continue;
+			h.hSignal->Fill(deltaEta, deltaPhi, w_jpsi * (1.0/nTotal/effweight_ass));
+			//h.hSignal->Fill(deltaEta,deltaPhi,1.0/nTotal/effweight_ass);
+                    }
+                }
+            }
+        }
+        
+    }
+
+    // =========================
+    // ch-ch same-event reference
+    // =========================
+    const auto& ch = *pVect_ass;
+    const int nCh = (int)ch.size();
+
+    if (nCh > 1) {
+        hMult_ch->Fill(nCh);
+
+        for (int i = 0; i < nCh; ++i) {
+            const auto& trg = ch[i];
+
+            // same correction style as your existing assoc weight
+            float eff_trg  = effhisto->GetBinContent(effhisto->FindBin(trg.eta, trg.pt, cent));
+            float fake_trg = fakehisto->GetBinContent(fakehisto->FindBin(trg.eta, trg.pt, cent));
+            float sec_trg  = sechisto->GetBinContent(sechisto->FindBin(trg.eta, trg.pt, cent));
+            float mul_trg  = mulhisto->GetBinContent(mulhisto->FindBin(trg.eta, trg.pt, cent));
+
+            float effweight_trg = eff_trg * (1 + mul_trg) / (1 - fake_trg) / (1 - sec_trg);
+            if (effweight_trg <= 0) continue;
+
+            for (int j = 0; j < nCh; ++j) {
+                if (i == j) continue; // remove self-pair
+
+                const auto& ass = ch[j];
+
+                float deltaEta = ass.eta - trg.eta;
+                float deltaPhi = ass.phi - trg.phi;
+
+                if (deltaPhi > PI)  deltaPhi -= 2 * PI;
+                if (deltaPhi < -PI) deltaPhi += 2 * PI;
+                if (deltaPhi > -PI && deltaPhi < -PI/2.) deltaPhi += 2 * PI;
+
+                if (fabs(deltaEta) < tolerance && fabs(deltaPhi) < tolerance) continue;
+
+                hSignal_chch->Fill(deltaEta, deltaPhi, 1.0 / nCh / effweight_trg);
+            }
+        }
+    }
+    
+    pVectVectVect_trg->push_back(particlesPerBin);
+    pVectVect_ass->push_back(*pVect_ass);
+    zvtxVect->push_back(bestvz);
+    nNtrkoffline->push_back(nMult_Ntrkoffline);
+    ncent->push_back(cent);
+
+    delete pVect_ass;
+
+}
+// ------------ method called once each job just before starting event loop  ------------
+void OOJPsiSkim::beginJob() {
+    edm::Service<TFileService> fs;
+
+    TH1D::SetDefaultSumw2();
+    TH2D::SetDefaultSumw2();
+
+    //edm::FileInPath fip1("mytry/DemoAnalyzer/data/Eff_OO_2025_Hijing_MB_Centrality_NoPU_3D_Nominal_Official.root");
+    edm::FileInPath fip1("Analyzer_v2/Analyzer/data/Eff_OO_2025_Hijing_MB_Centrality_NoPU_3D_Nominal_Official.root");
+    TFile f1(fip1.fullPath().c_str(), "READ");
+    effhisto = (TH3F*)f1.Get("hEff_3D");
+    effhisto->SetDirectory(nullptr); 
+    fakehisto = (TH3F*)f1.Get("hFak_3D");
+    fakehisto->SetDirectory(nullptr); 
+    sechisto = (TH3F*)f1.Get("hSec_3D");
+    sechisto->SetDirectory(nullptr); 
+    mulhisto = (TH3F*)f1.Get("hMul_3D");
+    mulhisto->SetDirectory(nullptr); 
+    f1.Close();  
+
+    hNtrk = fs->make<TH1D>("hNtrk", "Number of good tracks; N_{trk}; Events", 500, 0, 500);
+
+    //hpt = fs->make<TH1D>("hpt", "D^{0} transverse momentum; p_{T} (GeV/c); Entries", 200, 0, 20);
+    //heta = fs->make<TH1D>("heta", "D^{0} pseudorapidity; #eta; Entries", 100, -3, 3);
+    //hrapidity = fs->make<TH1D>("hrapidity", "D^{0} rapidity; y; Entries", 100, -2, 2);
+    //hphi = fs->make<TH1D>("hphi", "D^{0} azimuthal angle; #phi; Entries", 90, -PI, PI);
+    //hmass = fs->make<TH1D>("hmass", "D^{0} invariant mass; m_{K#pi} (GeV/c^{2}); Entries", 60, 1.7, 2.0);
+    hpt = fs->make<TH1D>("hpt", "J/#psi transverse momentum; p_{T} (GeV/c); Entries", 200, 0, 10);
+    heta = fs->make<TH1D>("heta", "J/#psi pseudorapidity; #eta; Entries", 120, -6, 6);
+    hrapidity = fs->make<TH1D>("hrapidity", "J/#psi rapidity; y; Entries", 100, -2.5, 2.5);  // J/psi rapidity range
+    hphi = fs->make<TH1D>("hphi", "J/#psi azimuthal angle; #phi; Entries", 90, -PI, PI);
+    hmass = fs->make<TH1D>("hmass", "J/#psi invariant mass; m_{#mu#mu} (GeV/c^{2}); Entries", 90, 2.6, 3.5);  // J/psi mass window
+
+    hptrap = fs->make<TH2D>("hpT_rap", "", 60 , -2.5, 2.5,50 , 0.0, 10.0);
+    hpteta = fs->make<TH2D>("hpT_eta", "", 60 , -6.0, 6.0,50 , 0.0, 10.0);
+    hptetaMu = fs->make<TH2D>("hpT_etaMu", "", 60 , -2.5, 2.5,50 , 0.0, 10.0);
+    // Ch-ch
+    // ===== ch-ch reference histograms =====
+    hMult_ch = fs->make<TH1D>(
+        "hMult_ch",
+        "charged multiplicity for ch-ch reference;N_{ch};Events",
+        400, 0, 400
+    );
+
+    hSignal_chch = fs->make<TH2D>(
+        "hSignal_chch",
+        "ch-ch same-event;#Delta#eta;#Delta#phi",
+        33, -4.95, 4.95, 31, -(0.5-1.0/32)*PI, (1.5-1.0/32)*PI
+    );
+
+    hBackground_chch = fs->make<TH2D>(
+        "hBackground_chch",
+        "ch-ch mixed-event;#Delta#eta;#Delta#phi",
+        33, -4.95, 4.95, 31, -(0.5-1.0/32)*PI, (1.5-1.0/32)*PI
+    );
+
+    hSignal_chch->Sumw2();
+    hBackground_chch->Sumw2();
+    
+    PtBins_all.resize(nPtBins);
+
+    for(int iPtBin = 0; iPtBin < nPtBins; iPtBin++){
+        PtBins_all[iPtBin] = Histograms{};
+
+        TFileDirectory ptDir = fs->mkdir(Form("ptBin%d", iPtBin));
+
+        Histograms& ptBin = PtBins_all[iPtBin];
+            
+            TString massName = Form("hmass_ptBin%d", iPtBin);
+
+        
+        TString massTitle = Form("J/#psi mass spectrum, %.1f < p_{T} < %.1f GeV/c",ptCuts[iPtBin], ptCuts[iPtBin+1]);
+        ptBin.hmass = ptDir.make<TH1D>(massName, massTitle, 60, 2.6, 3.5);
+        //ptBin.hpt_ptBin = ptDir.make<TH1D>(Form("hpt_ptBin%d", iPtBin), Form("J/#psi p_{T}, %.1f < p_{T} < %.1f GeV/c", ptCuts[iPtBin], ptCuts[iPtBin+1]), 100, 0, 10);
+            ptBin.heta_ptBin = ptDir.make<TH1D>(Form("heta_ptBin%d", iPtBin), Form("J/#psi #eta, %.1f < p_{T} < %.1f GeV/c", ptCuts[iPtBin], ptCuts[iPtBin+1]), 120, -6, 6);
+            ptBin.hphi_ptBin = ptDir.make<TH1D>(Form("hphi_ptBin%d", iPtBin), Form("J/#psi #phi, %.1f < p_{T} < %.1f GeV/c", ptCuts[iPtBin], ptCuts[iPtBin+1]), 90, -PI, PI);
+        
+            ptBin.PtMassBins_SB.resize(nMassBins);
+
+            TFileDirectory massDir = ptDir.mkdir(Form("massBins_pt%d", iPtBin));
+            
+            for (int iMassBin = 0; iMassBin < nMassBins; iMassBin++) {
+                ptBin.PtMassBins_SB[iMassBin] = MassBinHistograms{};
+                MassBinHistograms& massBin = ptBin.PtMassBins_SB[iMassBin];
+
+                TFileDirectory binDir = massDir.mkdir(Form("massBin%d", iMassBin));
+                
+                TString multName = Form("hMult_pt%d_mass%d", iPtBin, iMassBin);
+                TString multTitle = Form("Multiplicity, ptBin%d, massBin%d", iPtBin, iMassBin);
+                //massBin.hMult_bins = new TH1D(multName, multTitle, 100, 0, 100);
+                massBin.hMult_bins = binDir.make<TH1D>(multName, multTitle, 100, 0, 100);
+                
+                TString sigName = Form("hSignal_pt%d_mass%d", iPtBin, iMassBin);
+                //massBin.hSignal = new TH2D(sigName, ";#Delta#eta;#Delta#phi", 
+                //                           33,-4.95,4.95,31,-(0.5-1.0/32)*PI,(1.5-1.0/32)*PI);  
+                massBin.hSignal = binDir.make<TH2D>(sigName, ";#Delta#eta;#Delta#phi", 
+                                           33,-4.95,4.95,31,-(0.5-1.0/32)*PI,(1.5-1.0/32)*PI);
+
+                TString bkgName = Form("hBackground_pt%d_mass%d", iPtBin, iMassBin);
+                //massBin.hBackground = new TH2D(bkgName, ";#Delta#eta;#Delta#phi",
+                //                           33,-4.95,4.95,31,-(0.5-1.0/32)*PI,(1.5-1.0/32)*PI); 
+                massBin.hBackground = binDir.make<TH2D>(bkgName, ";#Delta#eta;#Delta#phi",
+                                           33,-4.95,4.95,31,-(0.5-1.0/32)*PI,(1.5-1.0/32)*PI); 
+        
+            massBin.hSignal->Sumw2();
+            massBin.hBackground->Sumw2();
+        }
+    }
+
+
+    pVectVectVect_trg = new vector< vector< vector< vector<Particle_trg> > > >;
+    pVectVect_ass = new vector< vector<Particle_ass> >;
+    zvtxVect = new vector<float>;
+    nNtrkoffline = new vector<int>;
+    ncent = new vector<int>;
+}
+
+// ------------ method called once each job just after ending the event loop  ------------
+void OOJPsiSkim::endJob() {
+  // Get total event counts
+    int nevttotal_trg = (int)pVectVectVect_trg->size();
+    int nevttotal_ass = (int)pVectVect_ass->size();
+
+    // Process each pt bin
+    for (int iPtBin = 0; iPtBin < nPtBins; iPtBin++){
+        // Process each mass bin
+        for (int iMassBin = 0; iMassBin < nMassBins; iMassBin++) 
+        {
+            Histograms& ptBin = PtBins_all[iPtBin];
+            MassBinHistograms& h = ptBin.PtMassBins_SB[iMassBin];
+        for(int nround=0; nround<20; nround++)
+        {
+            int ncount = 0;
+            
+            // Process each trigger event
+            for(int nevt_trg = 0; nevt_trg < nevttotal_trg; nevt_trg++)
+            {
+                int nevt_ass = gRandom->Integer(nevttotal_ass);
+                if(nevt_trg == nevt_ass) { nevt_trg--; continue; }
+                if(fabs((*zvtxVect)[nevt_trg]-(*zvtxVect)[nevt_ass])>0.5 || 
+                fabs((*nNtrkoffline)[nevt_trg] - (*nNtrkoffline)[nevt_ass]) > 10 ){
+                    nevt_trg--;
+                    ncount++;
+                    if(ncount>5000) {nevt_trg++; ncount = 0;}
+                    continue; 
+                }
+                    // Get particle collections
+                    const auto& pVectTmp_trg = (*pVectVectVect_trg)[nevt_trg][iPtBin][iMassBin]; // Trigger particles 
+                    const auto& pVectTmp_ass = (*pVectVect_ass)[nevt_ass];        // Associated particles
+                    int nMult_trg = pVectTmp_trg.size();
+                    
+                    // Skip events with no trigger particles
+                    if(nMult_trg == 0) continue;
+                    
+                    // Particle pairing loop
+                    
+                    for(const auto& part_trg : pVectTmp_trg) 
+                    {                        
+                        float eta_trg = part_trg.eta;
+                        float phi_trg = part_trg.phi;
+                        
+                        for(const auto& part_ass : pVectTmp_ass) 
+                        {
+                            float pt_ass = part_ass.pt;
+                            float eta_ass = part_ass.eta;
+                            float phi_ass = part_ass.phi;
+
+                            float eff_ass = effhisto->GetBinContent(effhisto->FindBin(eta_ass,pt_ass,(*ncent)[nevt_ass]));
+                            float fake_ass = fakehisto->GetBinContent(fakehisto->FindBin(eta_ass,pt_ass,(*ncent)[nevt_ass]));
+                            float sec_ass = sechisto->GetBinContent(sechisto->FindBin(eta_ass,pt_ass,(*ncent)[nevt_ass]));
+                            float mul_ass = mulhisto->GetBinContent(mulhisto->FindBin(eta_ass,pt_ass,(*ncent)[nevt_ass]));
+
+                            float effweight_ass = eff_ass * (1 + mul_ass) / (1 - fake_ass) / (1 - sec_ass);
+			    const double eff_jpsi = jpsiEff_pt_yHigh(pt);
+			    if (eff_jpsi <= 0) continue;  
+			    const double w_jpsi = 1.0 / eff_jpsi;
+                            
+                            float deltaEta=eta_ass-eta_trg;
+                            float deltaPhi=phi_ass-phi_trg;
+
+                            float deltaEta_mu1 = part_trg.eta_mu1 - eta_ass;
+                            float deltaPhi_mu1 = part_trg.phi_mu1 - phi_ass;
+                            float deltaEta_mu2 = part_trg.eta_mu2 - eta_ass;
+                            float deltaPhi_mu2 = part_trg.phi_mu2 - phi_ass;
+
+                            if(deltaPhi>PI) deltaPhi=deltaPhi-2*PI;
+                            if(deltaPhi<-PI) deltaPhi=deltaPhi+2*PI;
+                            if(deltaPhi>-PI && deltaPhi<-PI/2.) deltaPhi=deltaPhi+2*PI;
+
+                            if(deltaPhi_mu1 > PI) deltaPhi_mu1 -= 2*PI;
+                            if(deltaPhi_mu1 < -PI) deltaPhi_mu1 += 2*PI;
+                            if(deltaPhi_mu1 > -PI && deltaPhi_mu1 < -PI/2.) deltaPhi_mu1 += 2*PI;
+
+                            if(deltaPhi_mu2 > PI) deltaPhi_mu2 -= 2*PI;
+                            if(deltaPhi_mu2 < -PI) deltaPhi_mu2 += 2*PI;
+                            if(deltaPhi_mu2 > -PI && deltaPhi_mu2 < -PI/2.) deltaPhi_mu2 += 2*PI;
+                            
+                            //if(deltaEta==0 && deltaPhi==0) continue;
+                            if(fabs(deltaEta)==0 && fabs(deltaPhi)==0) continue;
+                            //if((fabs(deltaEta_dau1)==0 && fabs(deltaPhi_dau1)==0) || (fabs(deltaEta_dau2)==0 && fabs(deltaPhi_dau2)==0)) continue;
+                            if((fabs(deltaEta_mu1)<tolerance && fabs(deltaPhi_mu1)<tolerance) ||
+                               (fabs(deltaEta_mu2)<tolerance && fabs(deltaPhi_mu2)<tolerance)) continue;
+                            // Fill background histograms
+                            h.hBackground->Fill(deltaEta, deltaPhi, w_jpsi * (1.0/nMult_trg/effweight_ass));
+			    //h.hBackground->Fill(deltaEta, deltaPhi, 1.0/nMult_trg/effweight_ass);
+                        }
+                    }
+                }
+            }
+        } 
+    }
+    // ==========================================
+    // ch-ch mixed-event reference (separate loop)
+    // ==========================================
+    for (int nround = 0; nround < 20; nround++) {
+        int ncount = 0;
+
+        for (int nevt_trg = 0; nevt_trg < nevttotal_trg; nevt_trg++) {
+            int nevt_ass = gRandom->Integer(nevttotal_ass);
+
+            if (nevt_trg == nevt_ass) { nevt_trg--; continue; }
+
+            if (fabs((*zvtxVect)[nevt_trg] - (*zvtxVect)[nevt_ass]) > 0.5 ||
+                fabs((*nNtrkoffline)[nevt_trg] - (*nNtrkoffline)[nevt_ass]) > 10) {
+                nevt_trg--;
+                ncount++;
+                if (ncount > 5000) { nevt_trg++; ncount = 0; }
+                continue;
+            }
+
+            const auto& ch_trg = (*pVectVect_ass)[nevt_trg];
+            const auto& ch_ass = (*pVectVect_ass)[nevt_ass];
+
+            int nCh_trg = (int)ch_trg.size();
+            if (nCh_trg == 0) continue;
+
+            for (const auto& part_trg_ch : ch_trg) {
+                float eta_trg = part_trg_ch.eta;
+                float phi_trg = part_trg_ch.phi;
+                float pt_trg  = part_trg_ch.pt;
+
+                float eff_trg  = effhisto->GetBinContent(effhisto->FindBin(eta_trg, pt_trg, (*ncent)[nevt_trg]));
+                float fake_trg = fakehisto->GetBinContent(fakehisto->FindBin(eta_trg, pt_trg, (*ncent)[nevt_trg]));
+                float sec_trg  = sechisto->GetBinContent(sechisto->FindBin(eta_trg, pt_trg, (*ncent)[nevt_trg]));
+                float mul_trg  = mulhisto->GetBinContent(mulhisto->FindBin(eta_trg, pt_trg, (*ncent)[nevt_trg]));
+
+                float effweight_trg = eff_trg * (1 + mul_trg) / (1 - fake_trg) / (1 - sec_trg);
+                if (effweight_trg <= 0) continue;
+
+                for (const auto& part_ass_ch : ch_ass) {
+                    float deltaEta = part_ass_ch.eta - eta_trg;
+                    float deltaPhi = part_ass_ch.phi - phi_trg;
+
+                    if (deltaPhi > PI) deltaPhi -= 2 * PI;
+                    if (deltaPhi < -PI) deltaPhi += 2 * PI;
+                    if (deltaPhi > -PI && deltaPhi < -PI/2.) deltaPhi += 2 * PI;
+
+                    if (fabs(deltaEta) < tolerance && fabs(deltaPhi) < tolerance) continue;
+
+                    hBackground_chch->Fill(deltaEta, deltaPhi, 1.0 / nCh_trg / effweight_trg);
+                }
+            }
+        }
+    }
+}
+
+// ------------ method fills 'descriptions' with the allowed parameters for the module  ------------
+void OOJPsiSkim::fillDescriptions(edm::ConfigurationDescriptions& descriptions) {
+  //The following says we do not know what parameters are allowed so do no validation
+  // Please change this to state exactly what you do use, even if it is no parameters
+  edm::ParameterSetDescription desc;
+  desc.setUnknown();
+  descriptions.addDefault(desc);
+
+  //Specify that only 'tracks' is allowed
+  //To use, remove the default given above and uncomment below
+  //edm::ParameterSetDescription desc;
+  //desc.addUntracked<edm::InputTag>("tracks", edm::InputTag("ctfWithMaterialTracks"));
+  //descriptions.addWithDefaultLabel(desc);
+}
+
+//define this as a plug-in
+DEFINE_FWK_MODULE(OOJPsiSkim);

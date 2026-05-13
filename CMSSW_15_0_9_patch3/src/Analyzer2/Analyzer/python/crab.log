@@ -1,0 +1,96 @@
+DEBUG 2026-05-11 06:28:58.905 UTC: 	 CRAB Client version: v3.251020
+DEBUG 2026-05-11 06:28:58.906 UTC: 	 Running on: Linux lxplus934.cern.ch 5.14.0-611.49.1.el9_7.x86_64 #1 SMP PREEMPT_DYNAMIC Tue Apr 7 14:39:16 EDT 2026 x86_64 x86_64 x86_64 GNU/Linux
+DEBUG 2026-05-11 06:28:58.906 UTC: 	 Not using Singularity
+DEBUG 2026-05-11 06:28:58.906 UTC: 	 Operating System: Red Hat Enterprise Linux 9.7 (Plow)
+DEBUG 2026-05-11 06:28:58.906 UTC: 	 Executing command: 'tasks'
+DEBUG 2026-05-11 06:28:58.913 UTC: 	 Found CRAB cache file /afs/cern.ch/user/r/rosingh/.crab3
+DEBUG 2026-05-11 06:28:58.938 UTC: 	 Checking credentials
+DEBUG 2026-05-11 06:28:58.938 UTC: 	 Found proxy file /tmp/x509up_u142121
+DEBUG 2026-05-11 06:28:58.938 UTC: 	 Making sure it has proper VOMS extension
+DEBUG 2026-05-11 06:28:58.938 UTC: 	 Executing command :
+ voms-proxy-info --vo --file /tmp/x509up_u142121
+DEBUG 2026-05-11 06:28:59.005 UTC: 	 output : cms
+
+ error: 
+ retcode : 0
+DEBUG 2026-05-11 06:28:59.005 UTC: 	 Getting proxy life time left
+DEBUG 2026-05-11 06:28:59.005 UTC: 	 Executing command :
+ voms-proxy-info --actimeleft --timeleft --file /tmp/x509up_u142121
+DEBUG 2026-05-11 06:28:59.032 UTC: 	 output : 39414
+39414
+
+ error: 
+ retcode : 0
+DEBUG 2026-05-11 06:28:59.032 UTC: 	 Proxy valid for 10:56:54 hours
+DEBUG 2026-05-11 06:28:59.032 UTC: 	 Encoded data for curl request: subresource=delegatedn
+DEBUG 2026-05-11 06:28:59.105 UTC: 	 Registering user credentials on myproxy for /DC=ch/DC=cern/OU=Organic Units/OU=Users/CN=cmscrab/CN=(817881|373708)/CN=Robot: cms crab|/DC=ch/DC=cern/OU=Organic Units/OU=Users/CN=crabint1/CN=373708/CN=Robot: CMS CRAB Integration 1
+DEBUG 2026-05-11 06:28:59.105 UTC: 	 Executing command :
+ voms-proxy-info --identity --file /tmp/x509up_u142121
+DEBUG 2026-05-11 06:28:59.127 UTC: 	 output : /DC=ch/DC=cern/OU=Organic Units/OU=Users/CN=rosingh/CN=853383/CN=Rohit Kumar Singh
+
+ error: 
+ retcode : 0
+DEBUG 2026-05-11 06:28:59.128 UTC: 	 Getting myproxy life time left for bc2bf417a5bd571bf4511e882403a13c709272c0
+DEBUG 2026-05-11 06:28:59.128 UTC: 	 Executing command :
+ myproxy-info -s myproxy.cern.ch -l bc2bf417a5bd571bf4511e882403a13c709272c0
+DEBUG 2026-05-11 06:28:59.467 UTC: 	 output : username: bc2bf417a5bd571bf4511e882403a13c709272c0
+owner: /DC=ch/DC=cern/OU=Organic Units/OU=Users/CN=rosingh/CN=853383/CN=Rohit Kumar Singh
+  renewal policy: /DC=ch/DC=cern/OU=Organic Units/OU=Users/CN=cmscrab/CN=(817881|373708)/CN=Robot: cms crab|/DC=ch/DC=cern/OU=Organic Units/OU=Users/CN=crabint1/CN=373708/CN=Robot: CMS CRAB Integration 1
+  trusted retrieval policy: /DC=ch/DC=cern/OU=Organic Units/OU=Users/CN=cmscrab/CN=(817881|373708)/CN=Robot: cms crab|/DC=ch/DC=cern/OU=Organic Units/OU=Users/CN=crabint1/CN=373708/CN=Robot: CMS CRAB Integration 1
+  timeleft: 419:56:55  (17.5 days)
+
+ error: 
+ retcode : 0
+DEBUG 2026-05-11 06:28:59.467 UTC: 	 Myproxy is valid: 1511760
+DEBUG 2026-05-11 06:28:59.467 UTC: 	 Result of myproxy credential check:
+  Credential exists on myproxy: username: bc2bf417a5bd571bf4511e882403a13c709272c0  - validity: 17 days, 11:56:00
+DEBUG 2026-05-11 06:28:59.467 UTC: 	 Command use: tasks
+DEBUG 2026-05-11 06:28:59.467 UTC: 	 Options use: ['--days=1']
+DEBUG 2026-05-11 06:28:59.467 UTC: 	 Encoded data for curl request: subresource=version
+DEBUG 2026-05-11 06:28:59.519 UTC: 	 CRABClient version: v3.251020
+DEBUG 2026-05-11 06:28:59.520 UTC: 	 Instance is prod
+DEBUG 2026-05-11 06:28:59.520 UTC: 	 Server base url is cmsweb.cern.ch
+DEBUG 2026-05-11 06:28:59.520 UTC: 	 Command api workflow
+DEBUG 2026-05-11 06:28:59.520 UTC: 	 Encoded data for curl request: timestamp=2026-05-10
+INFO 2026-05-11 06:28:59.657 UTC: 	 
+List of tasks from 2026-05-10 until 2026-05-11
+INFO 2026-05-11 06:28:59.657 UTC: 	 Beware that STATUS here does not include information from grid jobs
+INFO 2026-05-11 06:28:59.657 UTC: 	 ================================================================================
+INFO 2026-05-11 06:28:59.657 UTC: 	 NAME								STATUS
+INFO 2026-05-11 06:28:59.657 UTC: 	 ================================================================================
+INFO 2026-05-11 06:28:59.658 UTC: 	 260511_052642:rosingh_crab_2pc_corr_jpsi_vs_ch_20260511_v96_Cent_flow39
+								SUBMITTED
+INFO 2026-05-11 06:28:59.658 UTC: 	 --------------------------------------------------------------------------------
+INFO 2026-05-11 06:28:59.658 UTC: 	 260511_052638:rosingh_crab_2pc_corr_jpsi_vs_ch_20260511_v96_Cent_flow38
+								SUBMITTED
+INFO 2026-05-11 06:28:59.658 UTC: 	 --------------------------------------------------------------------------------
+INFO 2026-05-11 06:28:59.658 UTC: 	 260511_052635:rosingh_crab_2pc_corr_jpsi_vs_ch_20260511_v96_Cent_flow37
+								SUBMITTED
+INFO 2026-05-11 06:28:59.658 UTC: 	 --------------------------------------------------------------------------------
+INFO 2026-05-11 06:28:59.658 UTC: 	 260511_052633:rosingh_crab_2pc_corr_jpsi_vs_ch_20260511_v96_Cent_flow36
+								SUBMITTED
+INFO 2026-05-11 06:28:59.658 UTC: 	 --------------------------------------------------------------------------------
+INFO 2026-05-11 06:28:59.658 UTC: 	 260511_052630:rosingh_crab_2pc_corr_jpsi_vs_ch_20260511_v96_Cent_flow35
+								SUBMITTED
+INFO 2026-05-11 06:28:59.658 UTC: 	 --------------------------------------------------------------------------------
+INFO 2026-05-11 06:28:59.658 UTC: 	 260511_052627:rosingh_crab_2pc_corr_jpsi_vs_ch_20260511_v96_Cent_flow34
+								SUBMITTED
+INFO 2026-05-11 06:28:59.658 UTC: 	 --------------------------------------------------------------------------------
+INFO 2026-05-11 06:28:59.658 UTC: 	 260511_052625:rosingh_crab_2pc_corr_jpsi_vs_ch_20260511_v96_Cent_flow33
+								SUBMITTED
+INFO 2026-05-11 06:28:59.658 UTC: 	 --------------------------------------------------------------------------------
+INFO 2026-05-11 06:28:59.658 UTC: 	 260511_052622:rosingh_crab_2pc_corr_jpsi_vs_ch_20260511_v96_Cent_flow32
+								SUBMITTED
+INFO 2026-05-11 06:28:59.658 UTC: 	 --------------------------------------------------------------------------------
+INFO 2026-05-11 06:28:59.658 UTC: 	 260511_052619:rosingh_crab_2pc_corr_jpsi_vs_ch_20260511_v96_Cent_flow31
+								SUBMITTED
+INFO 2026-05-11 06:28:59.658 UTC: 	 --------------------------------------------------------------------------------
+INFO 2026-05-11 06:28:59.658 UTC: 	 260511_052616:rosingh_crab_2pc_corr_jpsi_vs_ch_20260511_v96_Cent_flow30
+								SUBMITTED
+INFO 2026-05-11 06:28:59.658 UTC: 	 --------------------------------------------------------------------------------
+INFO 2026-05-11 06:28:59.658 UTC: 	 
+
+WARNING 2026-05-11 06:28:59.658 UTC: 	 ATTENTION return value for 'tasks' has been changed to a dictionary
+ format is {'commandStatus': 'SUCCESS' or 'FAILED',
+            'tasklist': list of [task, status] lists as before}
+INFO 2026-05-11 06:28:59.669 UTC: 	 Log file is /eos/cms/store/group/phys_heavyions/singhm/JPsi_v2/CMSSW_15_0_9_patch3/src/Analyzer_v2/Analyzer/python/crab.log
